@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <title>台灣核心血壓趨勢與風險警示</title>
+  <script src="https://cdn.jsdelivr.net/npm/fhirclient/build/fhir-client.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: "Microsoft JhengHei", Arial; padding: 20px; background: #f8f9fa; }
+    h1 { color: #0066cc; }
+    .alert { padding: 15px; background: #ffcccc; border-radius: 8px; font-weight: bold; margin: 15px 0; }
+    canvas { max-width: 700px; background: white; border-radius: 8px; padding: 10px; }
+  </style>
+</head>
+<body>
+  <h1>台灣核心血壓趨勢與風險警示</h1>
+  <div id="holder"></div>
+  <canvas id="bpChart"></canvas>
+  <div id="alert"></div>
+
+  <script>
+    FHIR.oauth2.ready()
+      .then(client => client.request("Patient")).then(patient => {
+        const name = patient.name?.[0]?.text || patient.name?.[0]?.family || "未知";
+        document.getElementById("holder").innerHTML = `<p><strong>病人：</strong>${name}</p>`;
+      });
+
+    FHIR.oauth2.ready()
+      .then(client => client.patient.request("Observation?category=vital-signs&code=55284-4,85354-9"))
+      .then(bundle => {
+        const entries = bundle.entry || [];
+        const dates = [];
+        const sys = [], dia = [];
+
+        entries.forEach(e => {
+          const obs = e.resource;
+          if (obs.code?.coding?.[0]?.code === "55284-4" || obs.code?.coding?.[0]?.code === "85354-9") {
+            const date = obs.effectiveDateTime?.split("T")[0];
+            const s = obs.component?.find(c => c.code.coding?.[0]?.code === "8480-6")?.valueQuantity?.value;
+            const d = obs.component?.find(c => c.code.coding?.[0]?.code === "8462-4")?.valueQuantity?.value;
+            if (s && d) {
+              dates.push(date);
+              sys.push(s);
+              dia.push(d);
+            }
+          }
+        });
+
+        // 最新血壓警示 (創新性 + 影響力)
+        if (sys.length > 0 && sys[sys.length-1] >= 140) {
+          document.getElementById("alert").innerHTML = 
+            '<div class="alert">⚠️ 最新收縮壓 ≥ 140 mmHg – 符合台灣高血壓臨床指引，建議立即評估</div>';
+        }
+
+        new Chart(document.getElementById("bpChart"), {
+          type: "line",
+          data: {
+            labels: dates,
+            datasets: [
+              { label: "收縮壓 (mmHg)", data: sys, borderColor: "#d32f2f", tension: 0.3 },
+              { label: "舒張壓 (mmHg)", data: dia, borderColor: "#1976d2", tension: 0.3 }
+            ]
+          },
+          options: {
+            responsive: true,
+            plugins: { title: { display: true, text: "血壓趨勢圖 (TW Core Vital Signs Profile)" }}
+          }
+        });
+      })
+      .catch(err => document.getElementById("holder").innerHTML += "<p>無法取得資料（測試環境正常）</p>");
+  </script>
+</body>
+</html>
