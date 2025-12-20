@@ -4,14 +4,17 @@
   <meta charset="utf-8">
   <title>啟動中...</title>
   <script src="https://cdn.jsdelivr.net/npm/fhirclient/build/fhir-client.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fhirclient/build/fhir-client.js"></script>
+
 </head>
 <body>
   <p>正在啟動應用程式，請稍候...</p>
   <script>
+    
     FHIR.oauth2.authorize({
-      client_id: "tw50-bp-app",  // Arbitrary for sandboxes
+      client_id: "tw50-bp-app", // TODO: 更新為沙盒註冊後獲得的 client_id
       scope: "patient/Patient.read patient/Observation.read openid profile launch",
-      redirect_uri: "https://hsujudy.github.io/tw-50-app/index.html",  // FULL URL here – this is the key fix
+      redirect_uri: "https://hsujudy.github.io/tw-50-app/index.html", // 與 manifest.json 中的主要 redirect_uri 一致
       completeInTarget: true
     });
   </script>
