@@ -15,6 +15,9 @@
       "src": "/launch.html",
       "dest": "/launch.html"
     }
+  ],
+
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" }
   ]
 }
-
