@@ -176,19 +176,34 @@
         return patientRequest.then(patient => {
           console.log('Patient data:', patient);
           
-          // Extract patient ID if not already set
-          if (!patientId) {
-            patientId = patient.id || (patient.entry && patient.entry[0]?.resource?.id) || null;
+          // Handle both single Patient and Bundle responses
+          let patientResource = null;
+          if (patient && patient.resourceType === 'Bundle' && patient.entry && patient.entry.length > 0) {
+            // Bundle response - get the first patient resource
+            patientResource = patient.entry[0]?.resource;
+            console.log('Extracted patient from Bundle:', patientResource);
+          } else if (patient && patient.resourceType === 'Patient') {
+            // Single Patient resource
+            patientResource = patient;
+            console.log('Received single Patient resource');
+          } else {
+            console.warn('Unexpected patient response format:', patient);
           }
           
-          // Handle both single Patient and Bundle responses
-          const patientResource = patient.resourceType === 'Bundle' && patient.entry 
-            ? patient.entry[0]?.resource 
-            : patient;
+          // Extract patient ID from the actual patient resource, not the bundle
+          if (!patientId && patientResource) {
+            patientId = patientResource.id;
+            console.log('Extracted Patient ID from resource:', patientId);
+          } else if (!patientId) {
+            // Fallback: try to get from bundle structure
+            patientId = patient.id || (patient.entry && patient.entry[0]?.resource?.id) || null;
+            console.log('Fallback: extracted Patient ID:', patientId);
+          }
           
           if (patientResource) {
             const name = patientResource.name?.[0]?.text || patientResource.name?.[0]?.family || "未知";
             document.getElementById("holder").innerHTML = `<p><strong>病人：</strong>${name}</p>`;
+            console.log('Patient name:', name);
           } else {
             document.getElementById("holder").innerHTML = `<p><strong>病人：</strong>未知</p>`;
           }
