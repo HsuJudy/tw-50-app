@@ -241,39 +241,60 @@
         const sys = [], dia = [];
 
         entries.forEach((e, index) => {
-          const obs = e.resource || e;
-          console.log(`Processing observation ${index + 1}:`, {
-            id: obs.id,
-            code: obs.code?.coding?.[0]?.code,
-            hasComponents: !!obs.component,
-            componentCount: obs.component?.length
-          });
-          
-          // Check if this is a blood pressure observation
-          const code = obs.code?.coding?.[0]?.code;
-          if (code === "55284-4" || code === "85354-9") {
-            const date = obs.effectiveDateTime?.split("T")[0];
-            const s = obs.component?.find(c => {
-              const compCode = c.code?.coding?.[0]?.code;
-              return compCode === "8480-6";
-            })?.valueQuantity?.value;
-            const d = obs.component?.find(c => {
-              const compCode = c.code?.coding?.[0]?.code;
-              return compCode === "8462-4";
-            })?.valueQuantity?.value;
-            
-            console.log(`  Date: ${date}, Systolic: ${s}, Diastolic: ${d}`);
-            
-            if (s && d && date) {
-              dates.push(date);
-              sys.push(s);
-              dia.push(d);
-              console.log(`  ✓ Added to chart data`);
-            } else {
-              console.warn(`  ✗ Missing data: date=${date}, sys=${s}, dia=${d}`);
+          try {
+            const obs = e.resource || e;
+            if (!obs || !obs.resourceType || obs.resourceType !== 'Observation') {
+              console.warn(`Entry ${index + 1} is not an Observation:`, e);
+              return;
             }
-          } else {
-            console.log(`  Skipped: not a blood pressure observation (code: ${code})`);
+            
+            console.log(`Processing observation ${index + 1}:`, {
+              id: obs.id,
+              code: obs.code?.coding?.[0]?.code,
+              hasComponents: !!obs.component,
+              componentCount: obs.component?.length,
+              hasDate: !!obs.effectiveDateTime
+            });
+            
+            // Check if this is a blood pressure observation
+            const code = obs.code?.coding?.[0]?.code;
+            if (code === "55284-4" || code === "85354-9") {
+              const date = obs.effectiveDateTime ? obs.effectiveDateTime.split("T")[0] : null;
+              
+              // Find systolic component
+              const systolicComp = obs.component?.find(c => {
+                const compCode = c.code?.coding?.[0]?.code;
+                return compCode === "8480-6";
+              });
+              const s = systolicComp?.valueQuantity?.value;
+              
+              // Find diastolic component
+              const diastolicComp = obs.component?.find(c => {
+                const compCode = c.code?.coding?.[0]?.code;
+                return compCode === "8462-4";
+              });
+              const d = diastolicComp?.valueQuantity?.value;
+              
+              console.log(`  Date: ${date}, Systolic: ${s}, Diastolic: ${d}`);
+              console.log(`  Components:`, obs.component?.map(c => ({
+                code: c.code?.coding?.[0]?.code,
+                value: c.valueQuantity?.value
+              })));
+              
+              if (s !== undefined && d !== undefined && date) {
+                dates.push(date);
+                sys.push(Number(s));
+                dia.push(Number(d));
+                console.log(`  ✓ Added to chart data`);
+              } else {
+                console.warn(`  ✗ Missing data: date=${date}, sys=${s}, dia=${d}`);
+                console.warn(`  Full observation:`, JSON.stringify(obs, null, 2));
+              }
+            } else {
+              console.log(`  Skipped: not a blood pressure observation (code: ${code})`);
+            }
+          } catch (err) {
+            console.error(`Error processing entry ${index + 1}:`, err, e);
           }
         });
 
@@ -288,8 +309,22 @@
         // Show message if no data found
         if (dates.length === 0) {
           console.warn('No blood pressure data found for this patient');
+          console.warn('Total entries received:', entries.length);
+          console.warn('Sample entry structure:', entries[0]);
+          
+          // Try fallback: query without code filter
+          if (entries.length > 0) {
+            console.log('Attempting fallback: filtering all vital signs observations...');
+            const allBP = entries.filter(e => {
+              const obs = e.resource || e;
+              const code = obs.code?.coding?.[0]?.code;
+              return code === "55284-4" || code === "85354-9";
+            });
+            console.log(`Found ${allBP.length} blood pressure observations after filtering`);
+          }
+          
           document.getElementById("chartContainer").innerHTML = 
-            '<div class="info">目前沒有可用的血壓資料。請確認病患資料中包含生命徵象觀測資料。</div>';
+            '<div class="info">目前沒有可用的血壓資料。請確認病患資料中包含生命徵象觀測資料。<br>檢查瀏覽器控制台以獲取詳細資訊。</div>';
           document.getElementById("loading").style.display = 'none';
           return;
         }
