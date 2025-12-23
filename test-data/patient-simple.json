@@ -1,0 +1,17 @@
+{
+  "resourceType": "Patient",
+  "id": "pat-simple",
+  "meta": {
+    "profile": ["https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore"]
+  },
+  "name": [
+    {
+      "text": "王小明",
+      "family": "Wang",
+      "given": ["Xiao Ming"]
+    }
+  ],
+  "gender": "male",
+  "birthDate": "1985-05-15"
+}
+

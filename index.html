@@ -161,8 +161,19 @@
           console.log('Patient context available:', patientId);
         }
         
-        // Load patient data using TW Core profile
-        return client.request("Patient?_profile=https://twcore.mohw.gov.tw/StructureDefinition/Patient-TWCore").then(patient => {
+        // Load patient data using SMART patient context
+        let patientRequest;
+        if (client.patient && client.patient.id) {
+          // Use SMART patient context to get the current patient
+          console.log('Using SMART patient context to load patient');
+          patientRequest = client.patient.read();
+        } else {
+          // Fallback: try to get patient from context or request
+          console.log('No patient context, trying direct request');
+          patientRequest = client.request("Patient");
+        }
+        
+        return patientRequest.then(patient => {
           console.log('Patient data:', patient);
           
           // Extract patient ID if not already set
@@ -192,17 +203,17 @@
         let observationRequest;
         
         if (client.patient && client.patient.id) {
-          // Use patient context if available with TW Core Vital Signs profile
-          console.log('Using patient context for observations with TW Core profile');
-          observationRequest = client.patient.request("Observation?category=vital-signs&code=55284-4,85354-9&_profile=https://twcore.mohw.gov.tw/StructureDefinition/Observation-vitalSigns-twcore");
+          // Use patient context if available
+          console.log('Using patient context for observations');
+          observationRequest = client.patient.request("Observation?category=vital-signs&code=55284-4,85354-9");
         } else if (patientId) {
-          // Fallback: use direct request with patient ID and TW Core profile
-          console.log('Using direct request with patient ID and TW Core profile:', patientId);
-          observationRequest = client.request(`Observation?patient=Patient/${patientId}&category=vital-signs&code=55284-4,85354-9&_profile=https://twcore.mohw.gov.tw/StructureDefinition/Observation-vitalSigns-twcore`);
+          // Fallback: use direct request with patient ID
+          console.log('Using direct request with patient ID:', patientId);
+          observationRequest = client.request(`Observation?patient=Patient/${patientId}&category=vital-signs&code=55284-4,85354-9`);
         } else {
           // Last resort: try without patient filter (may not work depending on server)
           console.log('Warning: No patient context or ID available, trying without patient filter');
-          observationRequest = client.request("Observation?category=vital-signs&code=55284-4,85354-9&_profile=https://twcore.mohw.gov.tw/StructureDefinition/Observation-vitalSigns-twcore");
+          observationRequest = client.request("Observation?category=vital-signs&code=55284-4,85354-9");
         }
         
         return observationRequest;
