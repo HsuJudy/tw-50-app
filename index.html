@@ -198,18 +198,25 @@
       })
       .then(({ client, patientId }) => {
         console.log('Requesting observations...');
+        console.log('Available patient info:', {
+          clientPatientId: client.patient?.id,
+          extractedPatientId: patientId,
+          clientPatient: client.patient
+        });
         
         // Build observation request - try patient context first, fallback to direct request
         let observationRequest;
+        let queryPatientId = null;
         
         if (client.patient && client.patient.id) {
           // Use patient context if available - this is the preferred method
-          const currentPatientId = client.patient.id;
-          console.log('Using patient context for observations, Patient ID:', currentPatientId);
+          queryPatientId = client.patient.id;
+          console.log('Using patient context for observations, Patient ID:', queryPatientId);
           observationRequest = client.patient.request("Observation?category=vital-signs&code=55284-4,85354-9");
         } else if (patientId) {
           // Fallback: use direct request with patient ID
-          console.log('Using direct request with patient ID:', patientId);
+          queryPatientId = patientId;
+          console.log('Using direct request with patient ID:', queryPatientId);
           observationRequest = client.request(`Observation?patient=Patient/${patientId}&category=vital-signs&code=55284-4,85354-9`);
         } else {
           // Last resort: try without patient filter (may not work depending on server)
@@ -217,6 +224,7 @@
           observationRequest = client.request("Observation?category=vital-signs&code=55284-4,85354-9");
         }
         
+        console.log('Querying observations for Patient ID:', queryPatientId || 'none (no filter)');
         return observationRequest;
       })
       .then(bundle => {
@@ -224,17 +232,28 @@
         
         // Handle both Bundle and array responses
         let entries = [];
-        if (bundle && bundle.resourceType === 'Bundle' && bundle.entry) {
-          entries = bundle.entry;
-          console.log(`Found Bundle with ${entries.length} entries`);
+        if (bundle && bundle.resourceType === 'Bundle') {
+          // Bundle might have entry as array, null, or undefined
+          if (Array.isArray(bundle.entry)) {
+            entries = bundle.entry;
+            console.log(`Found Bundle with ${entries.length} entries (total: ${bundle.total || 'unknown'})`);
+          } else if (bundle.entry === null || bundle.entry === undefined) {
+            entries = [];
+            console.log(`Found Bundle with no entries (total: ${bundle.total || 0})`);
+          } else {
+            entries = [bundle.entry]; // Single entry wrapped
+            console.log(`Found Bundle with single entry`);
+          }
         } else if (Array.isArray(bundle)) {
           entries = bundle.map(obs => ({ resource: obs }));
           console.log(`Found array with ${entries.length} observations`);
         } else if (bundle && bundle.entry) {
-          entries = bundle.entry;
+          entries = Array.isArray(bundle.entry) ? bundle.entry : [bundle.entry];
           console.log(`Found entries array with ${entries.length} items`);
         } else {
           console.warn('Unexpected bundle format:', bundle);
+          console.warn('Bundle keys:', bundle ? Object.keys(bundle) : 'bundle is null/undefined');
+          entries = [];
         }
         
         const dates = [];
