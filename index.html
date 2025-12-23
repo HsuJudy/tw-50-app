@@ -147,36 +147,84 @@
       }
     });
 
-    // Load patient data
+    // Load patient data and observations
+    let patientId = null;
+    
     FHIR.oauth2.ready()
       .then(client => {
         console.log('FHIR client ready');
-        return client.request("Patient");
+        
+        // Try to get patient context first
+        const patientContext = client.patient || null;
+        if (patientContext && patientContext.id) {
+          patientId = patientContext.id;
+          console.log('Patient context available:', patientId);
+        }
+        
+        // Load patient data using TW Core profile
+        return client.request("Patient?_profile=https://twcore.mohw.gov.tw/StructureDefinition/Patient-TWCore").then(patient => {
+          console.log('Patient data:', patient);
+          
+          // Extract patient ID if not already set
+          if (!patientId) {
+            patientId = patient.id || (patient.entry && patient.entry[0]?.resource?.id) || null;
+          }
+          
+          // Handle both single Patient and Bundle responses
+          const patientResource = patient.resourceType === 'Bundle' && patient.entry 
+            ? patient.entry[0]?.resource 
+            : patient;
+          
+          if (patientResource) {
+            const name = patientResource.name?.[0]?.text || patientResource.name?.[0]?.family || "未知";
+            document.getElementById("holder").innerHTML = `<p><strong>病人：</strong>${name}</p>`;
+          } else {
+            document.getElementById("holder").innerHTML = `<p><strong>病人：</strong>未知</p>`;
+          }
+          
+          return { client, patientId };
+        });
       })
-      .then(patient => {
-        console.log('Patient data:', patient);
-        const name = patient.name?.[0]?.text || patient.name?.[0]?.family || "未知";
-        document.getElementById("holder").innerHTML = `<p><strong>病人：</strong>${name}</p>`;
-      })
-      .catch(err => {
-        console.error('Error loading patient:', err);
-        document.getElementById("holder").innerHTML = `<p><strong>病人：</strong>未知</p>`;
-      });
-
-    // Load observation data
-    FHIR.oauth2.ready()
-      .then(client => {
+      .then(({ client, patientId }) => {
         console.log('Requesting observations...');
-        return client.patient.request("Observation?category=vital-signs&code=55284-4,85354-9");
+        
+        // Build observation request - try patient context first, fallback to direct request
+        let observationRequest;
+        
+        if (client.patient && client.patient.id) {
+          // Use patient context if available with TW Core Vital Signs profile
+          console.log('Using patient context for observations with TW Core profile');
+          observationRequest = client.patient.request("Observation?category=vital-signs&code=55284-4,85354-9&_profile=https://twcore.mohw.gov.tw/StructureDefinition/Observation-vitalSigns-twcore");
+        } else if (patientId) {
+          // Fallback: use direct request with patient ID and TW Core profile
+          console.log('Using direct request with patient ID and TW Core profile:', patientId);
+          observationRequest = client.request(`Observation?patient=Patient/${patientId}&category=vital-signs&code=55284-4,85354-9&_profile=https://twcore.mohw.gov.tw/StructureDefinition/Observation-vitalSigns-twcore`);
+        } else {
+          // Last resort: try without patient filter (may not work depending on server)
+          console.log('Warning: No patient context or ID available, trying without patient filter');
+          observationRequest = client.request("Observation?category=vital-signs&code=55284-4,85354-9&_profile=https://twcore.mohw.gov.tw/StructureDefinition/Observation-vitalSigns-twcore");
+        }
+        
+        return observationRequest;
       })
       .then(bundle => {
         console.log('Observation bundle received:', bundle);
-        const entries = bundle.entry || [];
+        
+        // Handle both Bundle and array responses
+        let entries = [];
+        if (bundle.resourceType === 'Bundle' && bundle.entry) {
+          entries = bundle.entry;
+        } else if (Array.isArray(bundle)) {
+          entries = bundle.map(obs => ({ resource: obs }));
+        } else if (bundle.entry) {
+          entries = bundle.entry;
+        }
+        
         const dates = [];
         const sys = [], dia = [];
 
         entries.forEach(e => {
-          const obs = e.resource;
+          const obs = e.resource || e;
           if (obs.code?.coding?.[0]?.code === "55284-4" || obs.code?.coding?.[0]?.code === "85354-9") {
             const date = obs.effectiveDateTime?.split("T")[0];
             const s = obs.component?.find(c => c.code.coding?.[0]?.code === "8480-6")?.valueQuantity?.value;
@@ -201,10 +249,10 @@
         renderChart(dates, sys, dia);
       })
       .catch(err => {
-        console.error('Error loading observations:', err);
-        document.getElementById("holder").innerHTML += "<p>無法取得資料（測試環境正常）</p>";
+        console.error('Error loading patient or observations:', err);
+        document.getElementById("holder").innerHTML = `<p><strong>病人：</strong>未知</p>`;
         document.getElementById("error").innerHTML = 
-          '<div class="error">❌ 無法載入觀測資料: ' + (err.message || '未知錯誤') + '</div>';
+          '<div class="error">❌ 無法載入觀測資料: ' + (err.message || '未知錯誤') + '<br>請確保您已通過 launch.html 啟動應用程式。</div>';
         document.getElementById("loading").style.display = 'none';
       });
   </script>
