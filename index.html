@@ -203,8 +203,9 @@
         let observationRequest;
         
         if (client.patient && client.patient.id) {
-          // Use patient context if available
-          console.log('Using patient context for observations');
+          // Use patient context if available - this is the preferred method
+          const currentPatientId = client.patient.id;
+          console.log('Using patient context for observations, Patient ID:', currentPatientId);
           observationRequest = client.patient.request("Observation?category=vital-signs&code=55284-4,85354-9");
         } else if (patientId) {
           // Fallback: use direct request with patient ID
@@ -212,7 +213,7 @@
           observationRequest = client.request(`Observation?patient=Patient/${patientId}&category=vital-signs&code=55284-4,85354-9`);
         } else {
           // Last resort: try without patient filter (may not work depending on server)
-          console.log('Warning: No patient context or ID available, trying without patient filter');
+          console.warn('Warning: No patient context or ID available, trying without patient filter');
           observationRequest = client.request("Observation?category=vital-signs&code=55284-4,85354-9");
         }
         
@@ -223,37 +224,82 @@
         
         // Handle both Bundle and array responses
         let entries = [];
-        if (bundle.resourceType === 'Bundle' && bundle.entry) {
+        if (bundle && bundle.resourceType === 'Bundle' && bundle.entry) {
           entries = bundle.entry;
+          console.log(`Found Bundle with ${entries.length} entries`);
         } else if (Array.isArray(bundle)) {
           entries = bundle.map(obs => ({ resource: obs }));
-        } else if (bundle.entry) {
+          console.log(`Found array with ${entries.length} observations`);
+        } else if (bundle && bundle.entry) {
           entries = bundle.entry;
+          console.log(`Found entries array with ${entries.length} items`);
+        } else {
+          console.warn('Unexpected bundle format:', bundle);
         }
         
         const dates = [];
         const sys = [], dia = [];
 
-        entries.forEach(e => {
+        entries.forEach((e, index) => {
           const obs = e.resource || e;
-          if (obs.code?.coding?.[0]?.code === "55284-4" || obs.code?.coding?.[0]?.code === "85354-9") {
+          console.log(`Processing observation ${index + 1}:`, {
+            id: obs.id,
+            code: obs.code?.coding?.[0]?.code,
+            hasComponents: !!obs.component,
+            componentCount: obs.component?.length
+          });
+          
+          // Check if this is a blood pressure observation
+          const code = obs.code?.coding?.[0]?.code;
+          if (code === "55284-4" || code === "85354-9") {
             const date = obs.effectiveDateTime?.split("T")[0];
-            const s = obs.component?.find(c => c.code.coding?.[0]?.code === "8480-6")?.valueQuantity?.value;
-            const d = obs.component?.find(c => c.code.coding?.[0]?.code === "8462-4")?.valueQuantity?.value;
+            const s = obs.component?.find(c => {
+              const compCode = c.code?.coding?.[0]?.code;
+              return compCode === "8480-6";
+            })?.valueQuantity?.value;
+            const d = obs.component?.find(c => {
+              const compCode = c.code?.coding?.[0]?.code;
+              return compCode === "8462-4";
+            })?.valueQuantity?.value;
+            
+            console.log(`  Date: ${date}, Systolic: ${s}, Diastolic: ${d}`);
+            
             if (s && d && date) {
               dates.push(date);
               sys.push(s);
               dia.push(d);
+              console.log(`  ✓ Added to chart data`);
+            } else {
+              console.warn(`  ✗ Missing data: date=${date}, sys=${s}, dia=${d}`);
             }
+          } else {
+            console.log(`  Skipped: not a blood pressure observation (code: ${code})`);
           }
         });
 
-        console.log('Processed data:', { dates, sys, dia });
+        console.log('Processed data summary:', { 
+          totalObservations: entries.length,
+          bloodPressureObservations: dates.length,
+          dates, 
+          sys, 
+          dia 
+        });
+
+        // Show message if no data found
+        if (dates.length === 0) {
+          console.warn('No blood pressure data found for this patient');
+          document.getElementById("chartContainer").innerHTML = 
+            '<div class="info">目前沒有可用的血壓資料。請確認病患資料中包含生命徵象觀測資料。</div>';
+          document.getElementById("loading").style.display = 'none';
+          return;
+        }
 
         // 最新血壓警示 (創新性 + 影響力)
         if (sys.length > 0 && sys[sys.length-1] >= 140) {
           document.getElementById("alert").innerHTML = 
             '<div class="alert">⚠️ 最新收縮壓 ≥ 140 mmHg – 符合台灣高血壓臨床指引，建議立即評估</div>';
+        } else {
+          document.getElementById("alert").innerHTML = '';
         }
 
         // Render chart
